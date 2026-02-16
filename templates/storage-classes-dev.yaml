@@ -1,0 +1,19 @@
+# For Docker Desktop Kubernetes
+# Uses the built-in hostpath provisioner
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: clickhouse-storage
+provisioner: docker.io/hostpath
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: keeper-storage
+provisioner: docker.io/hostpath
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

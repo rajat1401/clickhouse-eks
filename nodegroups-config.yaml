@@ -1,0 +1,150 @@
+spec:
+  configuration:
+    clusters:
+    - layout:
+        replicasCount: 5
+        shardsCount: 1
+      name: production
+    files:
+      config.d/storage_configuration.xml: |
+        <clickhouse>
+            <storage_configuration>
+                <disks>
+                    <s3_disk>
+                        <type>s3</type>
+                        <endpoint>https://s3.ap-south-1.amazonaws.com/gokwik-data-container/clickhouse-cold-data/{replica}</endpoint>
+                        <use_environment_credentials>true</use_environment_credentials>
+                        <region>ap-south-1</region>
+                        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+                        <skip_access_check>false</skip_access_check>
+                        <send_metadata>true</send_metadata>
+                        <support_batch_delete>true</support_batch_delete>
+                        <objects_chunk_size_to_delete>1000</objects_chunk_size_to_delete>
+                    </s3_disk>
+                    <s3_cache>
+                        <type>cache</type>
+                        <disk>s3_disk</disk>
+                        <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                        <max_size>100Gi</max_size>
+                    </s3_cache>
+                </disks>
+                <policies>
+                    <s3_only>
+                        <volumes>
+                            <main>
+                                <disk>s3_disk</disk>
+                            </main>
+                        </volumes>
+                    </s3_only>
+                    <s3_cache>
+                        <volumes>
+                            <main>
+                                <disk>s3_cache</disk>
+                            </main>
+                        </volumes>
+                    </s3_cache>
+                    <ttl_only_storage>
+                        <volumes>
+                            <hot>
+                                <disk>default</disk>
+                            </hot>
+                            <cold>
+                                <disk>s3_cache</disk>
+                                <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
+                            </cold>
+                        </volumes>
+                    </ttl_only_storage>
+                </policies>
+            </storage_configuration>
+        </clickhouse>
+    profiles:
+      default/max_insert_block_size: 1048449
+      default/max_server_memory_usage: 218435456000
+      default/max_threads: 32
+      default/optimize_min_equality_disjunction_chain_length: 3
+    settings:
+      max_suspicious_broken_parts: 1000
+    users:
+      admin/access_management: 1
+      admin/networks/ip: 0.0.0.0/0
+      admin/password: admin-password
+      admin/profile: default
+      admin/quota: default
+      admin/settings/allow_ddl: 1
+      admin/settings/readonly: 0
+      read-user/networks/ip: 0.0.0.0/0
+      read-user/password: read-password
+      read-user/profile: readonly
+      read-user/quota: default
+      read-user/settings/readonly: 1
+    zookeeper:
+      nodes:
+      - host: clickhouse-keeper-0.clickhouse-keepers.clickhouse-keeper.svc.cluster.local
+        port: 2181
+      - host: clickhouse-keeper-1.clickhouse-keepers.clickhouse-keeper.svc.cluster.local
+        port: 2181
+      - host: clickhouse-keeper-2.clickhouse-keepers.clickhouse-keeper.svc.cluster.local
+        port: 2181
+  defaults:
+    templates:
+      podTemplate: clickhouse-pod-template
+      volumeClaimTemplate: clickhouse-storage
+  templates:
+    podTemplates:
+    - name: clickhouse-pod-template
+      spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - clickhouse-cluster
+              topologyKey: kubernetes.io/hostname
+        containers:
+        - env:
+          - name: AWS_REGION
+            value: ap-south-1
+          - name: AWS_ROLE_ARN
+            value: arn:aws:iam::786623981280:role/kwt-prod-clickhouse-eks-role
+          - name: AWS_WEB_IDENTITY_TOKEN_FILE
+            value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+          image: clickhouse/clickhouse-server:25.4
+          name: clickhouse
+          resources:
+            limits:
+              cpu: "13"
+              memory: 218Gi
+            requests:
+              cpu: "12"
+              memory: 190Gi
+          volumeMounts:
+          - mountPath: /var/lib/clickhouse
+            name: clickhouse-storage
+          - mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
+            name: aws-iam-token
+            readOnly: true
+        nodeSelector:
+          instance: clickhouseNewKarpenterOnDemandInstance
+        serviceAccountName: clickhouse-s3-service-account
+        volumes:
+        - name: aws-iam-token
+          projected:
+            defaultMode: 420
+            sources:
+            - serviceAccountToken:
+                audience: sts.amazonaws.com
+                expirationSeconds: 86400
+                path: token
+    volumeClaimTemplates:
+    - name: clickhouse-storage
+      reclaimPolicy: Retain
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 4Ti
+        storageClassName: gp3

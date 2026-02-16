@@ -1,0 +1,12 @@
+adminPassword: admin123
+
+s3:
+  endpoint: "https://s3.amazonaws.com"
+  bucket: "gokwik-prod-clickhouse-backup"
+  path: "clickhouse-backups"
+  region: "ap-south-1"
+
+keeper:
+  fullnameOverride: "clickhouse-cluster-keeper"
+  clusterName: "keeper-cluster"
+  replicaCount: 1
